@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node.js
+node_modules/
+src/frontend/node_modules/
+
+# Build output
+src/frontend/dist/
+src/frontend/build/
+
+# Logs
+logs/
+*.log
+~/.pilotlog/logs/
+
+# User data - DO NOT COMMIT
+*.db
+*.db-shm
+*.db-wal
+~/.pilotlog/
+
+# Flight data CSVs (personal data)
+*.csv
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test/Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Claude Code
+.claude/
