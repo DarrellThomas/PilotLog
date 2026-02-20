@@ -8,6 +8,11 @@
 
   let currentView = 'dashboard';
   let showImport = false;
+  let refreshKey = 0;
+
+  function handleImportComplete() {
+    refreshKey++;
+  }
 
   const views = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -43,7 +48,9 @@
 
   <main class="main">
     {#if currentView === 'dashboard'}
-      <Dashboard />
+      {#key refreshKey}
+        <Dashboard />
+      {/key}
     {:else if currentView === 'map'}
       <RouteMap />
     {:else if currentView === 'flights'}
@@ -56,7 +63,7 @@
   </main>
 
   {#if showImport}
-    <ImportModal onclose={() => showImport = false} />
+    <ImportModal onclose={() => showImport = false} onimport={handleImportComplete} />
   {/if}
 </div>
 

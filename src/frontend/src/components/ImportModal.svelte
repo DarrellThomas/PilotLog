@@ -1,7 +1,7 @@
 <script>
   import { importCsv } from '../lib/api.js';
 
-  let { onclose } = $props();
+  let { onclose, onimport } = $props();
 
   let file = $state(null);
   let loading = $state(false);
@@ -25,6 +25,9 @@
 
     try {
       result = await importCsv(file);
+      if (result.rows_imported > 0) {
+        onimport?.();
+      }
     } catch (e) {
       error = e.message;
     } finally {

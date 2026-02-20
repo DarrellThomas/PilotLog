@@ -21,6 +21,118 @@
   const airportCoords = {};
 
   /**
+   * Southwest Airlines brand color heatmap
+   * Bold Blue → Warm Red → Sunrise Yellow
+   * Official colors: #304CB2, #E51D23, #F9B612
+   */
+  const heatStops = [
+    { pos: 0.0,  r: 48,  g: 76,  b: 178 },  // Bold Blue #304CB2
+    { pos: 0.5,  r: 229, g: 29,  b: 35  },  // Warm Red #E51D23
+    { pos: 1.0,  r: 249, g: 182, b: 18  },  // Sunrise Yellow #F9B612
+  ];
+
+  /**
+   * Interpolate between thermal heatmap color stops
+   * @param {number} intensity - Value between 0 and 1
+   * @returns {string} RGB color string
+   */
+  function getHeatColor(intensity) {
+    const t = Math.max(0, Math.min(1, intensity));
+
+    // Find the two stops to interpolate between
+    let lower = heatStops[0];
+    let upper = heatStops[heatStops.length - 1];
+
+    for (let i = 0; i < heatStops.length - 1; i++) {
+      if (t >= heatStops[i].pos && t <= heatStops[i + 1].pos) {
+        lower = heatStops[i];
+        upper = heatStops[i + 1];
+        break;
+      }
+    }
+
+    // Interpolate
+    const range = upper.pos - lower.pos;
+    const factor = range > 0 ? (t - lower.pos) / range : 0;
+
+    const r = Math.round(lower.r + (upper.r - lower.r) * factor);
+    const g = Math.round(lower.g + (upper.g - lower.g) * factor);
+    const b = Math.round(lower.b + (upper.b - lower.b) * factor);
+
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  /**
+   * Get RGB components for gradient creation
+   * @param {number} intensity - Value between 0 and 1
+   * @returns {{r: number, g: number, b: number}}
+   */
+  function getHeatRGB(intensity) {
+    const t = Math.max(0, Math.min(1, intensity));
+
+    let lower = heatStops[0];
+    let upper = heatStops[heatStops.length - 1];
+
+    for (let i = 0; i < heatStops.length - 1; i++) {
+      if (t >= heatStops[i].pos && t <= heatStops[i + 1].pos) {
+        lower = heatStops[i];
+        upper = heatStops[i + 1];
+        break;
+      }
+    }
+
+    const range = upper.pos - lower.pos;
+    const factor = range > 0 ? (t - lower.pos) / range : 0;
+
+    return {
+      r: Math.round(lower.r + (upper.r - lower.r) * factor),
+      g: Math.round(lower.g + (upper.g - lower.g) * factor),
+      b: Math.round(lower.b + (upper.b - lower.b) * factor),
+    };
+  }
+
+  /**
+   * Create a gradient marker icon for airports
+   * @param {number} intensity - Value between 0 and 1
+   * @param {number} size - Diameter in pixels
+   * @returns {L.DivIcon}
+   */
+  function createGradientMarker(intensity, size) {
+    const { r, g, b } = getHeatRGB(intensity);
+
+    // Core color (center - brighter)
+    const coreColor = `rgb(${Math.min(255, r + 60)}, ${Math.min(255, g + 60)}, ${Math.min(255, b + 60)})`;
+    // Main color
+    const mainColor = `rgb(${r}, ${g}, ${b})`;
+    // Edge color (darker, more transparent)
+    const edgeColor = `rgba(${Math.max(0, r - 40)}, ${Math.max(0, g - 40)}, ${Math.max(0, b - 40)}, 0.6)`;
+    // Outer glow (transparent)
+    const glowColor = `rgba(${r}, ${g}, ${b}, 0)`;
+
+    const html = `
+      <div style="
+        width: ${size}px;
+        height: ${size}px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%,
+          ${coreColor} 0%,
+          ${mainColor} 40%,
+          ${edgeColor} 70%,
+          ${glowColor} 100%
+        );
+        box-shadow: 0 0 ${size * 0.4}px ${size * 0.15}px ${mainColor};
+      "></div>
+    `;
+
+    return L.divIcon({
+      html: html,
+      className: 'gradient-marker',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  }
+
+  /**
    * Calculate intermediate points along a great circle arc.
    * @param {[number, number]} start - [lat, lng] of origin
    * @param {[number, number]} end - [lat, lng] of destination
@@ -169,9 +281,9 @@
   function updateMapLayers() {
     if (!map || !routeData) return;
 
-    // Clear existing layers
+    // Clear existing layers (routes and airport markers)
     map.eachLayer((layer) => {
-      if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) {
+      if (layer instanceof L.Polyline || layer instanceof L.CircleMarker || layer instanceof L.Marker) {
         map.removeLayer(layer);
       }
     });
@@ -179,8 +291,10 @@
     // Find max count for intensity scaling
     const maxCount = Math.max(...routeData.routes.map(r => r.count), 1);
 
-    // Draw routes as great circle arcs
-    for (const route of routeData.routes) {
+    // Draw routes as great circle arcs (draw lower intensity routes first so hot routes appear on top)
+    const sortedRoutes = [...routeData.routes].sort((a, b) => a.count - b.count);
+
+    for (const route of sortedRoutes) {
       const origin = airportCoords[route.origin];
       const dest = airportCoords[route.destination];
 
@@ -188,8 +302,9 @@
 
       // Calculate intensity (log scale for better distribution)
       const intensity = Math.log10(route.count + 1) / Math.log10(maxCount + 1);
-      const weight = 1 + intensity * 3;
-      const opacity = 0.2 + intensity * 0.7;
+      // Scale weight more dramatically: thin for cold, thick for hot
+      const weight = 1.5 + intensity * 4;
+      const opacity = 0.4 + intensity * 0.55;
 
       // Calculate great circle arc points
       // Use more points for longer routes
@@ -197,9 +312,11 @@
       const numPoints = Math.max(20, Math.min(100, Math.round(distance * 2)));
       const arcPoints = getGreatCirclePoints(origin, dest, numPoints);
 
-      const colorOpt = routeColors[settings.routeColor] || routeColors.canyonBlue;
+      // Use heatmap color based on intensity
+      const heatColor = getHeatColor(intensity);
+
       const line = L.polyline(arcPoints, {
-        color: colorOpt.color,
+        color: heatColor,
         weight: weight,
         opacity: opacity,
       }).addTo(map);
@@ -214,24 +331,26 @@
     // Find max visits for scaling airport markers
     const maxVisits = Math.max(...routeData.airports.map(a => a.departures + a.arrivals), 1);
 
-    // Draw airports
-    for (const airport of routeData.airports) {
+    // Sort airports by visits so heavily visited ones render on top
+    const sortedAirports = [...routeData.airports].sort((a, b) =>
+      (a.departures + a.arrivals) - (b.departures + b.arrivals)
+    );
+
+    // Draw airports with gradient heatmap markers
+    for (const airport of sortedAirports) {
       const coords = airportCoords[airport.icao];
       if (!coords) continue;
 
       const totalVisits = airport.departures + airport.arrivals;
-      // Scale radius based on visits (log scale for better distribution)
+      // Scale size based on visits (log scale for better distribution)
+      // Broader scale: tiny for few visits, much larger for many
       const visitIntensity = Math.log10(totalVisits + 1) / Math.log10(maxVisits + 1);
-      const radius = 3 + visitIntensity * 10;
+      const size = 8 + Math.pow(visitIntensity, 0.7) * 32;
 
-      const airportColorOpt = routeColors[settings.routeColor] || routeColors.canyonBlue;
-      L.circleMarker(coords, {
-        radius: radius,
-        fillColor: airportColorOpt.light,
-        fillOpacity: 0.7 + visitIntensity * 0.25,
-        color: '#fff',
-        weight: 1,
-      })
+      // Create gradient marker
+      const icon = createGradientMarker(visitIntensity, size);
+
+      L.marker(coords, { icon: icon })
         .bindTooltip(`${airport.icao}${airport.name ? ': ' + airport.name : ''}<br>${totalVisits} visits`)
         .addTo(map);
     }
@@ -426,5 +545,11 @@
     padding: var(--space-sm) var(--space-md);
     border-radius: var(--radius-sm);
     z-index: 1000;
+  }
+
+  /* Remove default Leaflet marker styling for gradient markers */
+  :global(.gradient-marker) {
+    background: transparent !important;
+    border: none !important;
   }
 </style>
