@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pilotlog.api.routes &#8212; PilotLog 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for pilotlog.api.routes</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;FastAPI routes for PilotLog API.&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">date</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span> <span class="nn">tempfile</span> <span class="kn">import</span> <span class="n">NamedTemporaryFile</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Annotated</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="kn">from</span> <span class="nn">fastapi</span> <span class="kn">import</span> <span class="n">APIRouter</span><span class="p">,</span> <span class="n">Depends</span><span class="p">,</span> <span class="n">File</span><span class="p">,</span> <span class="n">HTTPException</span><span class="p">,</span> <span class="n">Query</span><span class="p">,</span> <span class="n">UploadFile</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy.ext.asyncio</span> <span class="kn">import</span> <span class="n">AsyncSession</span>
+
+<span class="kn">from</span> <span class="nn">pilotlog.api.schemas</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">AirportResponse</span><span class="p">,</span>
+    <span class="n">AirportStats</span><span class="p">,</span>
+    <span class="n">AirportsListResponse</span><span class="p">,</span>
+    <span class="n">FlightResponse</span><span class="p">,</span>
+    <span class="n">FlightsListResponse</span><span class="p">,</span>
+    <span class="ne">ImportError</span><span class="p">,</span>
+    <span class="n">ImportResponse</span><span class="p">,</span>
+    <span class="n">ImportSummary</span><span class="p">,</span>
+    <span class="n">RollingResponse</span><span class="p">,</span>
+    <span class="n">RollingWindowStats</span><span class="p">,</span>
+    <span class="n">RouteStats</span><span class="p">,</span>
+    <span class="n">RoutesResponse</span><span class="p">,</span>
+    <span class="n">StatsResponse</span><span class="p">,</span>
+    <span class="n">AircraftTypeStats</span><span class="p">,</span>
+    <span class="n">YearStats</span><span class="p">,</span>
+    <span class="n">DateRange</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">pilotlog.database.connection</span> <span class="kn">import</span> <span class="n">get_db</span>
+<span class="kn">from</span> <span class="nn">pilotlog.database.queries</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_airports</span><span class="p">,</span>
+    <span class="n">get_career_statistics</span><span class="p">,</span>
+    <span class="n">get_flights</span><span class="p">,</span>
+    <span class="n">get_rolling_totals</span><span class="p">,</span>
+    <span class="n">get_route_statistics</span><span class="p">,</span>
+    <span class="n">get_airport_statistics</span><span class="p">,</span>
+    <span class="n">get_statistics_by_aircraft_type</span><span class="p">,</span>
+    <span class="n">get_statistics_by_year</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">pilotlog.importers.swa_csv</span> <span class="kn">import</span> <span class="n">SWACSVImporter</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="n">router</span> <span class="o">=</span> <span class="n">APIRouter</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="format_block_time">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.format_block_time">[docs]</a>
+<span class="k">def</span> <span class="nf">format_block_time</span><span class="p">(</span><span class="n">minutes</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Format minutes as H:MM.&quot;&quot;&quot;</span>
+    <span class="n">hours</span> <span class="o">=</span> <span class="n">minutes</span> <span class="o">//</span> <span class="mi">60</span>
+    <span class="n">mins</span> <span class="o">=</span> <span class="n">minutes</span> <span class="o">%</span> <span class="mi">60</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">hours</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">mins</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+
+<div class="viewcode-block" id="list_flights">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.list_flights">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/flights&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">FlightsListResponse</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">list_flights</span><span class="p">(</span>
+    <span class="n">db</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">AsyncSession</span><span class="p">,</span> <span class="n">Depends</span><span class="p">(</span><span class="n">get_db</span><span class="p">)],</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter flights on or after this date&quot;</span><span class="p">),</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter flights on or before this date&quot;</span><span class="p">),</span>
+    <span class="n">origin</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter by origin airport&quot;</span><span class="p">),</span>
+    <span class="n">destination</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter by destination airport&quot;</span><span class="p">),</span>
+    <span class="n">crew</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter by crew name (partial match)&quot;</span><span class="p">),</span>
+    <span class="n">tail</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter by tail number&quot;</span><span class="p">),</span>
+    <span class="n">aircraft_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter by aircraft type&quot;</span><span class="p">),</span>
+    <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="n">ge</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">le</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Max results&quot;</span><span class="p">),</span>
+    <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">ge</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Pagination offset&quot;</span><span class="p">),</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Query flights with optional filters.&quot;&quot;&quot;</span>
+    <span class="n">flights</span><span class="p">,</span> <span class="n">total</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_flights</span><span class="p">(</span>
+        <span class="n">db</span><span class="p">,</span>
+        <span class="n">date_from</span><span class="o">=</span><span class="n">date_from</span><span class="p">,</span>
+        <span class="n">date_to</span><span class="o">=</span><span class="n">date_to</span><span class="p">,</span>
+        <span class="n">origin</span><span class="o">=</span><span class="n">origin</span><span class="p">,</span>
+        <span class="n">destination</span><span class="o">=</span><span class="n">destination</span><span class="p">,</span>
+        <span class="n">crew</span><span class="o">=</span><span class="n">crew</span><span class="p">,</span>
+        <span class="n">tail</span><span class="o">=</span><span class="n">tail</span><span class="p">,</span>
+        <span class="n">aircraft_type</span><span class="o">=</span><span class="n">aircraft_type</span><span class="p">,</span>
+        <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">,</span>
+        <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">FlightsListResponse</span><span class="p">(</span>
+        <span class="n">flights</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">FlightResponse</span><span class="p">(</span>
+                <span class="nb">id</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                <span class="n">flight_date</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">flight_date</span><span class="p">,</span>
+                <span class="n">flight_number</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">flight_number</span><span class="p">,</span>
+                <span class="n">origin</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">origin</span><span class="p">,</span>
+                <span class="n">destination</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">destination</span><span class="p">,</span>
+                <span class="n">block_minutes</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">,</span>
+                <span class="n">block_formatted</span><span class="o">=</span><span class="n">format_block_time</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">),</span>
+                <span class="n">tail_number</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">tail_number</span><span class="p">,</span>
+                <span class="n">aircraft_type</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">aircraft_type</span><span class="p">,</span>
+                <span class="n">crew_name</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">crew_name</span><span class="p">,</span>
+                <span class="n">crew_position</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">crew_position</span><span class="p">,</span>
+                <span class="n">is_deadhead</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">is_deadhead</span><span class="p">,</span>
+                <span class="n">pic_takeoff</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">pic_takeoff</span><span class="p">,</span>
+                <span class="n">pic_landing</span><span class="o">=</span><span class="n">f</span><span class="o">.</span><span class="n">pic_landing</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">flights</span>
+        <span class="p">],</span>
+        <span class="n">total</span><span class="o">=</span><span class="n">total</span><span class="p">,</span>
+        <span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">,</span>
+        <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">,</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_stats">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.get_stats">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/stats&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">StatsResponse</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_stats</span><span class="p">(</span>
+    <span class="n">db</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">AsyncSession</span><span class="p">,</span> <span class="n">Depends</span><span class="p">(</span><span class="n">get_db</span><span class="p">)],</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter range start&quot;</span><span class="p">),</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter range end&quot;</span><span class="p">),</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get aggregate career statistics.&quot;&quot;&quot;</span>
+    <span class="n">career_stats</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_career_statistics</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span>
+    <span class="n">by_aircraft</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_statistics_by_aircraft_type</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span>
+    <span class="n">by_year</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_statistics_by_year</span><span class="p">(</span><span class="n">db</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">StatsResponse</span><span class="p">(</span>
+        <span class="n">total_flights</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;total_flights&quot;</span><span class="p">],</span>
+        <span class="n">total_block_minutes</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;total_block_minutes&quot;</span><span class="p">],</span>
+        <span class="n">total_block_formatted</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;total_block_formatted&quot;</span><span class="p">],</span>
+        <span class="n">unique_airports</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;unique_airports&quot;</span><span class="p">],</span>
+        <span class="n">unique_aircraft</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;unique_aircraft&quot;</span><span class="p">],</span>
+        <span class="n">date_range</span><span class="o">=</span><span class="n">DateRange</span><span class="p">(</span>
+            <span class="n">first_flight</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;date_range&quot;</span><span class="p">][</span><span class="s2">&quot;first_flight&quot;</span><span class="p">],</span>
+            <span class="n">last_flight</span><span class="o">=</span><span class="n">career_stats</span><span class="p">[</span><span class="s2">&quot;date_range&quot;</span><span class="p">][</span><span class="s2">&quot;last_flight&quot;</span><span class="p">],</span>
+        <span class="p">),</span>
+        <span class="n">by_aircraft_type</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">AircraftTypeStats</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;type&quot;</span><span class="p">],</span> <span class="n">flights</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;flights&quot;</span><span class="p">],</span> <span class="n">minutes</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;minutes&quot;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">by_aircraft</span>
+        <span class="p">],</span>
+        <span class="n">by_year</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">YearStats</span><span class="p">(</span><span class="n">year</span><span class="o">=</span><span class="n">y</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">],</span> <span class="n">flights</span><span class="o">=</span><span class="n">y</span><span class="p">[</span><span class="s2">&quot;flights&quot;</span><span class="p">],</span> <span class="n">minutes</span><span class="o">=</span><span class="n">y</span><span class="p">[</span><span class="s2">&quot;minutes&quot;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">y</span> <span class="ow">in</span> <span class="n">by_year</span>
+        <span class="p">],</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_rolling">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.get_rolling">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/rolling&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">RollingResponse</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_rolling</span><span class="p">(</span>
+    <span class="n">db</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">AsyncSession</span><span class="p">,</span> <span class="n">Depends</span><span class="p">(</span><span class="n">get_db</span><span class="p">)],</span>
+    <span class="n">as_of</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Calculate as of this date (default: today)&quot;</span><span class="p">),</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get rolling window totals.&quot;&quot;&quot;</span>
+    <span class="n">as_of_date</span> <span class="o">=</span> <span class="n">as_of</span> <span class="ow">or</span> <span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span>
+    <span class="c1"># 672 hours = 28 days (FAR 117 lookback)</span>
+    <span class="n">windows</span> <span class="o">=</span> <span class="p">[</span><span class="mi">7</span><span class="p">,</span> <span class="mi">28</span><span class="p">,</span> <span class="mi">60</span><span class="p">,</span> <span class="mi">90</span><span class="p">,</span> <span class="mi">365</span><span class="p">]</span>
+
+    <span class="n">rolling</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_rolling_totals</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">as_of_date</span><span class="p">,</span> <span class="n">windows</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">RollingResponse</span><span class="p">(</span>
+        <span class="n">as_of</span><span class="o">=</span><span class="n">as_of_date</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+        <span class="n">windows</span><span class="o">=</span><span class="p">{</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">w</span><span class="p">):</span> <span class="n">RollingWindowStats</span><span class="p">(</span>
+                <span class="n">flights</span><span class="o">=</span><span class="n">rolling</span><span class="p">[</span><span class="n">w</span><span class="p">][</span><span class="s2">&quot;flights&quot;</span><span class="p">],</span>
+                <span class="n">minutes</span><span class="o">=</span><span class="n">rolling</span><span class="p">[</span><span class="n">w</span><span class="p">][</span><span class="s2">&quot;minutes&quot;</span><span class="p">],</span>
+                <span class="n">formatted</span><span class="o">=</span><span class="n">rolling</span><span class="p">[</span><span class="n">w</span><span class="p">][</span><span class="s2">&quot;formatted&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="n">windows</span>
+        <span class="p">},</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="get_routes">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.get_routes">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/routes&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">RoutesResponse</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_routes</span><span class="p">(</span>
+    <span class="n">db</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">AsyncSession</span><span class="p">,</span> <span class="n">Depends</span><span class="p">(</span><span class="n">get_db</span><span class="p">)],</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter range start&quot;</span><span class="p">),</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="n">Query</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Filter range end&quot;</span><span class="p">),</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get aggregated route data for map visualization.&quot;&quot;&quot;</span>
+    <span class="n">route_stats</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_route_statistics</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span>
+    <span class="n">airport_stats</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_airport_statistics</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">RoutesResponse</span><span class="p">(</span>
+        <span class="n">routes</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">RouteStats</span><span class="p">(</span>
+                <span class="n">origin</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;origin&quot;</span><span class="p">],</span>
+                <span class="n">destination</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;destination&quot;</span><span class="p">],</span>
+                <span class="n">count</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;count&quot;</span><span class="p">],</span>
+                <span class="n">total_minutes</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;total_minutes&quot;</span><span class="p">],</span>
+                <span class="n">first_flown</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;first_flown&quot;</span><span class="p">],</span>
+                <span class="n">last_flown</span><span class="o">=</span><span class="n">r</span><span class="p">[</span><span class="s2">&quot;last_flown&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">route_stats</span>
+        <span class="p">],</span>
+        <span class="n">airports</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">AirportStats</span><span class="p">(</span>
+                <span class="n">icao</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;icao&quot;</span><span class="p">],</span>
+                <span class="n">name</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span>
+                <span class="n">latitude</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;latitude&quot;</span><span class="p">],</span>
+                <span class="n">longitude</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;longitude&quot;</span><span class="p">],</span>
+                <span class="n">departures</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;departures&quot;</span><span class="p">],</span>
+                <span class="n">arrivals</span><span class="o">=</span><span class="n">a</span><span class="p">[</span><span class="s2">&quot;arrivals&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">airport_stats</span>
+        <span class="p">],</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="import_csv">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.import_csv">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="s2">&quot;/import&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">ImportResponse</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">import_csv</span><span class="p">(</span>
+    <span class="n">db</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">AsyncSession</span><span class="p">,</span> <span class="n">Depends</span><span class="p">(</span><span class="n">get_db</span><span class="p">)],</span>
+    <span class="n">file</span><span class="p">:</span> <span class="n">UploadFile</span> <span class="o">=</span> <span class="n">File</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;CSV file to import&quot;</span><span class="p">),</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Import a CSV file.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">file</span><span class="o">.</span><span class="n">filename</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">file</span><span class="o">.</span><span class="n">filename</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.csv&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">HTTPException</span><span class="p">(</span><span class="n">status_code</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">detail</span><span class="o">=</span><span class="s2">&quot;File must be a CSV file&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Save uploaded file to temp location</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="k">await</span> <span class="n">file</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="k">with</span> <span class="n">NamedTemporaryFile</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">&quot;wb&quot;</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;.csv&quot;</span><span class="p">,</span> <span class="n">delete</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="k">as</span> <span class="n">tmp</span><span class="p">:</span>
+        <span class="n">tmp</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">tmp_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">tmp</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Import the file</span>
+        <span class="n">importer</span> <span class="o">=</span> <span class="n">SWACSVImporter</span><span class="p">()</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">importer</span><span class="o">.</span><span class="n">import_file</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">,</span> <span class="n">db</span><span class="p">)</span>
+
+        <span class="c1"># Build date range string</span>
+        <span class="n">date_range</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">date_range_start</span> <span class="ow">and</span> <span class="n">result</span><span class="o">.</span><span class="n">date_range_end</span><span class="p">:</span>
+            <span class="n">date_range</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">date_range_start</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">date_range_end</span><span class="si">}</span><span class="s2">&quot;</span>
+
+        <span class="k">return</span> <span class="n">ImportResponse</span><span class="p">(</span>
+            <span class="n">batch_id</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">batch_id</span><span class="p">,</span>
+            <span class="n">filename</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">filename</span><span class="p">,</span>
+            <span class="n">rows_processed</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">rows_processed</span><span class="p">,</span>
+            <span class="n">rows_imported</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">rows_imported</span><span class="p">,</span>
+            <span class="n">rows_skipped</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">rows_skipped</span><span class="p">,</span>
+            <span class="n">rows_duplicate</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">rows_duplicate</span><span class="p">,</span>
+            <span class="n">errors</span><span class="o">=</span><span class="p">[</span><span class="ne">ImportError</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="n">e</span><span class="p">[</span><span class="s2">&quot;row&quot;</span><span class="p">],</span> <span class="n">message</span><span class="o">=</span><span class="n">e</span><span class="p">[</span><span class="s2">&quot;message&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">errors</span><span class="p">],</span>
+            <span class="n">summary</span><span class="o">=</span><span class="n">ImportSummary</span><span class="p">(</span>
+                <span class="n">new_block_minutes</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">new_block_minutes</span><span class="p">,</span>
+                <span class="n">new_block_formatted</span><span class="o">=</span><span class="n">result</span><span class="o">.</span><span class="n">new_block_formatted</span><span class="p">,</span>
+                <span class="n">date_range</span><span class="o">=</span><span class="n">date_range</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="c1"># Clean up temp file</span>
+        <span class="n">tmp_path</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="n">missing_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="list_airports">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.list_airports">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/airports&quot;</span><span class="p">,</span> <span class="n">response_model</span><span class="o">=</span><span class="n">AirportsListResponse</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">list_airports</span><span class="p">(</span>
+    <span class="n">db</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">AsyncSession</span><span class="p">,</span> <span class="n">Depends</span><span class="p">(</span><span class="n">get_db</span><span class="p">)],</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get airport lookup data.&quot;&quot;&quot;</span>
+    <span class="n">airports</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_airports</span><span class="p">(</span><span class="n">db</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">AirportsListResponse</span><span class="p">(</span>
+        <span class="n">airports</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">AirportResponse</span><span class="p">(</span>
+                <span class="n">icao</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">icao</span><span class="p">,</span>
+                <span class="n">iata</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">iata</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">city</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">city</span><span class="p">,</span>
+                <span class="n">latitude</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">latitude</span><span class="p">,</span>
+                <span class="n">longitude</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">longitude</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">airports</span>
+        <span class="p">]</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="health_check">
+<a class="viewcode-back" href="../../../modules/api.html#pilotlog.api.routes.health_check">[docs]</a>
+<span class="nd">@router</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;/health&quot;</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">health_check</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Health check endpoint.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;healthy&quot;</span><span class="p">}</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">PilotLog</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/main.html">Main</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/config.html">Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/api.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/database.html">Database</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/importers.html">Importers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/calculations.html">Calculations</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Darrell.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

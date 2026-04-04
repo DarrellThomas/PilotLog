@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pilotlog.database.queries &#8212; PilotLog 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for pilotlog.database.queries</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Database query functions for PilotLog.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">date</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">from</span> <span class="nn">sqlalchemy</span> <span class="kn">import</span> <span class="n">func</span><span class="p">,</span> <span class="n">select</span>
+<span class="kn">from</span> <span class="nn">sqlalchemy.ext.asyncio</span> <span class="kn">import</span> <span class="n">AsyncSession</span>
+
+<span class="kn">from</span> <span class="nn">pilotlog.database.models</span> <span class="kn">import</span> <span class="n">Airport</span><span class="p">,</span> <span class="n">Flight</span><span class="p">,</span> <span class="n">ImportBatch</span>
+
+
+<div class="viewcode-block" id="get_flights">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_flights">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_flights</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">origin</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">destination</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">crew</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">tail</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">aircraft_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
+    <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Flight</span><span class="p">],</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Query flights with optional filters.&quot;&quot;&quot;</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">Flight</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">date_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">date_to</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">date_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">origin</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">origin</span> <span class="o">==</span> <span class="n">origin</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">destination</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">destination</span> <span class="o">==</span> <span class="n">destination</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">crew</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">crew_name</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;%</span><span class="si">{</span><span class="n">crew</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">tail</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">tail_number</span><span class="o">.</span><span class="n">ilike</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;%</span><span class="si">{</span><span class="n">tail</span><span class="si">}</span><span class="s2">%&quot;</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">aircraft_type</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">aircraft_type</span> <span class="o">==</span> <span class="n">aircraft_type</span><span class="p">)</span>
+
+    <span class="c1"># Get total count</span>
+    <span class="n">count_query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">())</span><span class="o">.</span><span class="n">select_from</span><span class="p">(</span><span class="n">query</span><span class="o">.</span><span class="n">subquery</span><span class="p">())</span>
+    <span class="n">total_result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">count_query</span><span class="p">)</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="n">total_result</span><span class="o">.</span><span class="n">scalar</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">0</span>
+
+    <span class="c1"># Get paginated results</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="o">.</span><span class="n">desc</span><span class="p">(),</span> <span class="n">Flight</span><span class="o">.</span><span class="n">departure_time</span><span class="o">.</span><span class="n">desc</span><span class="p">())</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">limit</span><span class="p">(</span><span class="n">limit</span><span class="p">)</span><span class="o">.</span><span class="n">offset</span><span class="p">(</span><span class="n">offset</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="n">flights</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">scalars</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+
+    <span class="k">return</span> <span class="n">flights</span><span class="p">,</span> <span class="n">total</span></div>
+
+
+
+<div class="viewcode-block" id="get_flight_by_id">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_flight_by_id">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_flight_by_id</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span> <span class="n">flight_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Flight</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get a single flight by ID.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">Flight</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">flight_id</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">scalar_one_or_none</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="check_duplicate_flight">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.check_duplicate_flight">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">check_duplicate_flight</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">flight_date</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">flight_number</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">origin</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">destination</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if a flight already exists (for duplicate detection during import).&quot;&quot;&quot;</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">Flight</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">==</span> <span class="n">flight_date</span><span class="p">,</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">origin</span> <span class="o">==</span> <span class="n">origin</span><span class="p">,</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">destination</span> <span class="o">==</span> <span class="n">destination</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">flight_number</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_number</span> <span class="o">==</span> <span class="n">flight_number</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">scalar_one_or_none</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="get_route_statistics">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_route_statistics">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_route_statistics</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get aggregated route statistics for map visualization.&quot;&quot;&quot;</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">origin</span><span class="p">,</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">destination</span><span class="p">,</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;count&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;total_minutes&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;first_flown&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;last_flown&quot;</span><span class="p">),</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">origin</span><span class="p">,</span> <span class="n">Flight</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">date_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">date_to</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">date_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="n">rows</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;origin&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">origin</span><span class="p">,</span>
+            <span class="s2">&quot;destination&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">destination</span><span class="p">,</span>
+            <span class="s2">&quot;count&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">count</span><span class="p">,</span>
+            <span class="s2">&quot;total_minutes&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">total_minutes</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;first_flown&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">first_flown</span><span class="p">,</span>
+            <span class="s2">&quot;last_flown&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">last_flown</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span>
+    <span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="get_airport_statistics">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_airport_statistics">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_airport_statistics</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get airport visit statistics.&quot;&quot;&quot;</span>
+    <span class="c1"># Subquery for departures</span>
+    <span class="n">dep_query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;icao&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;departures&quot;</span><span class="p">),</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">origin</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="n">dep_query</span> <span class="o">=</span> <span class="n">dep_query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">date_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">date_to</span><span class="p">:</span>
+        <span class="n">dep_query</span> <span class="o">=</span> <span class="n">dep_query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">date_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+
+    <span class="c1"># Subquery for arrivals</span>
+    <span class="n">arr_query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">destination</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;icao&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;arrivals&quot;</span><span class="p">),</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">destination</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="n">arr_query</span> <span class="o">=</span> <span class="n">arr_query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">date_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">date_to</span><span class="p">:</span>
+        <span class="n">arr_query</span> <span class="o">=</span> <span class="n">arr_query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">date_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+
+    <span class="n">dep_result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">dep_query</span><span class="p">)</span>
+    <span class="n">arr_result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">arr_query</span><span class="p">)</span>
+
+    <span class="n">departures</span> <span class="o">=</span> <span class="p">{</span><span class="n">row</span><span class="o">.</span><span class="n">icao</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">departures</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">dep_result</span><span class="o">.</span><span class="n">all</span><span class="p">()}</span>
+    <span class="n">arrivals</span> <span class="o">=</span> <span class="p">{</span><span class="n">row</span><span class="o">.</span><span class="n">icao</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">arrivals</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">arr_result</span><span class="o">.</span><span class="n">all</span><span class="p">()}</span>
+
+    <span class="c1"># Combine and join with airport data</span>
+    <span class="n">all_icao</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">departures</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="o">|</span> <span class="nb">set</span><span class="p">(</span><span class="n">arrivals</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+
+    <span class="n">airport_query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span><span class="n">Airport</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Airport</span><span class="o">.</span><span class="n">icao</span><span class="o">.</span><span class="n">in_</span><span class="p">(</span><span class="n">all_icao</span><span class="p">))</span>
+    <span class="n">airport_result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">airport_query</span><span class="p">)</span>
+    <span class="n">airports</span> <span class="o">=</span> <span class="p">{</span><span class="n">a</span><span class="o">.</span><span class="n">icao</span><span class="p">:</span> <span class="n">a</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">airport_result</span><span class="o">.</span><span class="n">scalars</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">()}</span>
+
+    <span class="n">stats</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">icao</span> <span class="ow">in</span> <span class="n">all_icao</span><span class="p">:</span>
+        <span class="n">airport</span> <span class="o">=</span> <span class="n">airports</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">icao</span><span class="p">)</span>
+        <span class="n">stats</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;icao&quot;</span><span class="p">:</span> <span class="n">icao</span><span class="p">,</span>
+                <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">airport</span><span class="o">.</span><span class="n">name</span> <span class="k">if</span> <span class="n">airport</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;latitude&quot;</span><span class="p">:</span> <span class="n">airport</span><span class="o">.</span><span class="n">latitude</span> <span class="k">if</span> <span class="n">airport</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;longitude&quot;</span><span class="p">:</span> <span class="n">airport</span><span class="o">.</span><span class="n">longitude</span> <span class="k">if</span> <span class="n">airport</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;departures&quot;</span><span class="p">:</span> <span class="n">departures</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">icao</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+                <span class="s2">&quot;arrivals&quot;</span><span class="p">:</span> <span class="n">arrivals</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">icao</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">stats</span></div>
+
+
+
+<div class="viewcode-block" id="get_rolling_totals">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_rolling_totals">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_rolling_totals</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">as_of_date</span><span class="p">:</span> <span class="n">date</span><span class="p">,</span>
+    <span class="n">windows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">7</span><span class="p">,</span> <span class="mi">28</span><span class="p">,</span> <span class="mi">60</span><span class="p">,</span> <span class="mi">90</span><span class="p">,</span> <span class="mi">365</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculate rolling window totals.</span>
+
+<span class="sd">    Note: The 28-day (672-hour) window uses &gt;= to include the cutoff date,</span>
+<span class="sd">    matching FAR 117 interpretation. Other windows use &gt; for standard</span>
+<span class="sd">    calendar-day lookback behavior.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">results</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">for</span> <span class="n">window</span> <span class="ow">in</span> <span class="n">windows</span><span class="p">:</span>
+        <span class="n">cutoff</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">fromordinal</span><span class="p">(</span><span class="n">as_of_date</span><span class="o">.</span><span class="n">toordinal</span><span class="p">()</span> <span class="o">-</span> <span class="n">window</span><span class="p">)</span>
+
+        <span class="c1"># 28-day (672-hour) window includes the cutoff date (&gt;=)</span>
+        <span class="c1"># Other windows exclude the cutoff date (&gt;)</span>
+        <span class="k">if</span> <span class="n">window</span> <span class="o">==</span> <span class="mi">28</span><span class="p">:</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+                <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;flights&quot;</span><span class="p">),</span>
+                <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;minutes&quot;</span><span class="p">),</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                <span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">cutoff</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">as_of_date</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="n">Flight</span><span class="o">.</span><span class="n">is_deadhead</span> <span class="o">==</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># noqa: E712</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+                <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;flights&quot;</span><span class="p">),</span>
+                <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;minutes&quot;</span><span class="p">),</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span>
+                <span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;</span> <span class="n">cutoff</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">as_of_date</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(),</span>
+                <span class="n">Flight</span><span class="o">.</span><span class="n">is_deadhead</span> <span class="o">==</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># noqa: E712</span>
+            <span class="p">)</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+        <span class="n">row</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">one</span><span class="p">()</span>
+
+        <span class="n">minutes</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">minutes</span> <span class="ow">or</span> <span class="mi">0</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">window</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;flights&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">flights</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;minutes&quot;</span><span class="p">:</span> <span class="n">minutes</span><span class="p">,</span>
+            <span class="s2">&quot;formatted&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">minutes</span><span class="w"> </span><span class="o">//</span><span class="w"> </span><span class="mi">60</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">minutes</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="mi">60</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">results</span></div>
+
+
+
+<div class="viewcode-block" id="get_career_statistics">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_career_statistics">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_career_statistics</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get overall career statistics.&quot;&quot;&quot;</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;total_flights&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;total_minutes&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">distinct</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">origin</span><span class="p">))</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;unique_origins&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">distinct</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">destination</span><span class="p">))</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;unique_destinations&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">distinct</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">tail_number</span><span class="p">))</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;unique_aircraft&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;first_flight&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">max</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;last_flight&quot;</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">date_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">date_to</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">date_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+    <span class="n">row</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">one</span><span class="p">()</span>
+
+    <span class="n">total_minutes</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">total_minutes</span> <span class="ow">or</span> <span class="mi">0</span>
+
+    <span class="c1"># Get unique airports (union of origins and destinations)</span>
+    <span class="n">airports_query</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">select</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">select_from</span><span class="p">(</span>
+            <span class="n">select</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">origin</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;icao&quot;</span><span class="p">))</span>
+            <span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">destination</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;icao&quot;</span><span class="p">)))</span>
+            <span class="o">.</span><span class="n">subquery</span><span class="p">()</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="k">pass</span>  <span class="c1"># Already filtered in subquery would need reconstruction</span>
+    <span class="n">airports_result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">airports_query</span><span class="p">)</span>
+    <span class="n">unique_airports</span> <span class="o">=</span> <span class="n">airports_result</span><span class="o">.</span><span class="n">scalar</span><span class="p">()</span> <span class="ow">or</span> <span class="mi">0</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;total_flights&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">total_flights</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;total_block_minutes&quot;</span><span class="p">:</span> <span class="n">total_minutes</span><span class="p">,</span>
+        <span class="s2">&quot;total_block_formatted&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">total_minutes</span><span class="w"> </span><span class="o">//</span><span class="w"> </span><span class="mi">60</span><span class="si">}</span><span class="s2">:</span><span class="si">{</span><span class="n">total_minutes</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="mi">60</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;unique_airports&quot;</span><span class="p">:</span> <span class="n">unique_airports</span><span class="p">,</span>
+        <span class="s2">&quot;unique_aircraft&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">unique_aircraft</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">,</span>
+        <span class="s2">&quot;date_range&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;first_flight&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">first_flight</span><span class="p">,</span>
+            <span class="s2">&quot;last_flight&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">last_flight</span><span class="p">,</span>
+        <span class="p">},</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="get_statistics_by_aircraft_type">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_statistics_by_aircraft_type">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_statistics_by_aircraft_type</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get statistics grouped by aircraft type.&quot;&quot;&quot;</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">Flight</span><span class="o">.</span><span class="n">aircraft_type</span><span class="p">,</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;flights&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;minutes&quot;</span><span class="p">),</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">aircraft_type</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">desc</span><span class="p">())</span>
+
+    <span class="k">if</span> <span class="n">date_from</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&gt;=</span> <span class="n">date_from</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+    <span class="k">if</span> <span class="n">date_to</span><span class="p">:</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span> <span class="o">&lt;=</span> <span class="n">date_to</span><span class="o">.</span><span class="n">isoformat</span><span class="p">())</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">aircraft_type</span> <span class="ow">or</span> <span class="s2">&quot;Unknown&quot;</span><span class="p">,</span> <span class="s2">&quot;flights&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">flights</span><span class="p">,</span> <span class="s2">&quot;minutes&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">minutes</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+    <span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="get_statistics_by_year">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_statistics_by_year">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_statistics_by_year</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get statistics grouped by year.&quot;&quot;&quot;</span>
+    <span class="n">query</span> <span class="o">=</span> <span class="n">select</span><span class="p">(</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">substr</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;year&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">count</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">id</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;flights&quot;</span><span class="p">),</span>
+        <span class="n">func</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">block_minutes</span><span class="p">)</span><span class="o">.</span><span class="n">label</span><span class="p">(</span><span class="s2">&quot;minutes&quot;</span><span class="p">),</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">group_by</span><span class="p">(</span><span class="n">func</span><span class="o">.</span><span class="n">substr</span><span class="p">(</span><span class="n">Flight</span><span class="o">.</span><span class="n">flight_date</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="s2">&quot;year&quot;</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;year&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">year</span><span class="p">),</span> <span class="s2">&quot;flights&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">flights</span><span class="p">,</span> <span class="s2">&quot;minutes&quot;</span><span class="p">:</span> <span class="n">row</span><span class="o">.</span><span class="n">minutes</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">all</span><span class="p">()</span>
+    <span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="get_airports">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_airports">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_airports</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Airport</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get all airports.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">Airport</span><span class="p">)</span><span class="o">.</span><span class="n">order_by</span><span class="p">(</span><span class="n">Airport</span><span class="o">.</span><span class="n">icao</span><span class="p">))</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">scalars</span><span class="p">()</span><span class="o">.</span><span class="n">all</span><span class="p">())</span></div>
+
+
+
+<div class="viewcode-block" id="get_airport_by_icao">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_airport_by_icao">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_airport_by_icao</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span> <span class="n">icao</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Airport</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get an airport by ICAO code.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">Airport</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">Airport</span><span class="o">.</span><span class="n">icao</span> <span class="o">==</span> <span class="n">icao</span><span class="o">.</span><span class="n">upper</span><span class="p">()))</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">scalar_one_or_none</span><span class="p">()</span></div>
+
+
+
+<div class="viewcode-block" id="get_import_batch">
+<a class="viewcode-back" href="../../../modules/database.html#pilotlog.database.queries.get_import_batch">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">get_import_batch</span><span class="p">(</span><span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span> <span class="n">batch_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ImportBatch</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get an import batch by ID.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">session</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">select</span><span class="p">(</span><span class="n">ImportBatch</span><span class="p">)</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">ImportBatch</span><span class="o">.</span><span class="n">id</span> <span class="o">==</span> <span class="n">batch_id</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">result</span><span class="o">.</span><span class="n">scalar_one_or_none</span><span class="p">()</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">PilotLog</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/main.html">Main</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/config.html">Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/api.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/database.html">Database</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/importers.html">Importers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/calculations.html">Calculations</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Darrell.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pilotlog.calculations.aggregations &#8212; PilotLog 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d1102ebc" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../../_static/documentation_options.js?v=01f34227"></script>
+    <script src="../../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+   
+  <link rel="stylesheet" href="../../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for pilotlog.calculations.aggregations</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Aggregation calculations for flight statistics.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">date</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span>
+
+<span class="kn">from</span> <span class="nn">sqlalchemy.ext.asyncio</span> <span class="kn">import</span> <span class="n">AsyncSession</span>
+
+<span class="kn">from</span> <span class="nn">pilotlog.database.queries</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_career_statistics</span> <span class="k">as</span> <span class="n">db_get_career_statistics</span><span class="p">,</span>
+    <span class="n">get_route_statistics</span> <span class="k">as</span> <span class="n">db_get_route_statistics</span><span class="p">,</span>
+    <span class="n">get_statistics_by_aircraft_type</span><span class="p">,</span>
+    <span class="n">get_statistics_by_year</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="calculate_career_statistics">
+<a class="viewcode-back" href="../../../modules/calculations.html#pilotlog.calculations.aggregations.calculate_career_statistics">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">calculate_career_statistics</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate overall career statistics.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        session: Database session</span>
+<span class="sd">        date_from: Filter start date</span>
+<span class="sd">        date_to: Filter end date</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Dictionary with career stats:</span>
+<span class="sd">        {</span>
+<span class="sd">            &quot;total_flights&quot;: 4388,</span>
+<span class="sd">            &quot;total_block_minutes&quot;: 503102,</span>
+<span class="sd">            &quot;total_block_formatted&quot;: &quot;8385:02&quot;,</span>
+<span class="sd">            &quot;unique_airports&quot;: 125,</span>
+<span class="sd">            &quot;unique_aircraft&quot;: 874,</span>
+<span class="sd">            &quot;date_range&quot;: {&quot;first_flight&quot;: &quot;2014-02-19&quot;, &quot;last_flight&quot;: &quot;2025-12-31&quot;},</span>
+<span class="sd">            &quot;by_aircraft_type&quot;: [...],</span>
+<span class="sd">            &quot;by_year&quot;: [...]</span>
+<span class="sd">        }</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">stats</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db_get_career_statistics</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span>
+    <span class="n">by_aircraft</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_statistics_by_aircraft_type</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span>
+    <span class="n">by_year</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_statistics_by_year</span><span class="p">(</span><span class="n">session</span><span class="p">)</span>
+
+    <span class="n">stats</span><span class="p">[</span><span class="s2">&quot;by_aircraft_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">by_aircraft</span>
+    <span class="n">stats</span><span class="p">[</span><span class="s2">&quot;by_year&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">by_year</span>
+
+    <span class="k">return</span> <span class="n">stats</span></div>
+
+
+
+<div class="viewcode-block" id="calculate_route_statistics">
+<a class="viewcode-back" href="../../../modules/calculations.html#pilotlog.calculations.aggregations.calculate_route_statistics">[docs]</a>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">calculate_route_statistics</span><span class="p">(</span>
+    <span class="n">session</span><span class="p">:</span> <span class="n">AsyncSession</span><span class="p">,</span>
+    <span class="n">date_from</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">date_to</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">date</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate route statistics for map visualization.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        session: Database session</span>
+<span class="sd">        date_from: Filter start date</span>
+<span class="sd">        date_to: Filter end date</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        List of route statistics:</span>
+<span class="sd">        [</span>
+<span class="sd">            {</span>
+<span class="sd">                &quot;origin&quot;: &quot;KHOU&quot;,</span>
+<span class="sd">                &quot;destination&quot;: &quot;KDEN&quot;,</span>
+<span class="sd">                &quot;count&quot;: 367,</span>
+<span class="sd">                &quot;total_minutes&quot;: 42000,</span>
+<span class="sd">                &quot;first_flown&quot;: &quot;2014-03-15&quot;,</span>
+<span class="sd">                &quot;last_flown&quot;: &quot;2025-01-30&quot;</span>
+<span class="sd">            },</span>
+<span class="sd">            ...</span>
+<span class="sd">        ]</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="k">await</span> <span class="n">db_get_route_statistics</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">date_from</span><span class="p">,</span> <span class="n">date_to</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="calculate_route_intensity">
+<a class="viewcode-back" href="../../../modules/calculations.html#pilotlog.calculations.aggregations.calculate_route_intensity">[docs]</a>
+<span class="k">def</span> <span class="nf">calculate_route_intensity</span><span class="p">(</span><span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">max_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculate route intensity for visualization (0.0 to 1.0).</span>
+
+<span class="sd">    Uses logarithmic scaling for better visual distribution.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        count: Number of times this route was flown</span>
+<span class="sd">        max_count: Maximum count across all routes</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Intensity value between 0.0 and 1.0</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">max_count</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">count</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mf">0.0</span>
+
+    <span class="kn">import</span> <span class="nn">math</span>
+
+    <span class="c1"># Log scale for better distribution</span>
+    <span class="n">log_count</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">log_max</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">log10</span><span class="p">(</span><span class="n">max_count</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">log_count</span> <span class="o">/</span> <span class="n">log_max</span> <span class="k">if</span> <span class="n">log_max</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="mf">0.0</span></div>
+
+
+
+<div class="viewcode-block" id="calculate_most_frequent_routes">
+<a class="viewcode-back" href="../../../modules/calculations.html#pilotlog.calculations.aggregations.calculate_most_frequent_routes">[docs]</a>
+<span class="k">def</span> <span class="nf">calculate_most_frequent_routes</span><span class="p">(</span><span class="n">routes</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span> <span class="n">top_n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get the most frequently flown routes.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        routes: List of route statistics</span>
+<span class="sd">        top_n: Number of top routes to return</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Top N routes sorted by count</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">sorted_routes</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">routes</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="p">[</span><span class="s2">&quot;count&quot;</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sorted_routes</span><span class="p">[:</span><span class="n">top_n</span><span class="p">]</span></div>
+
+
+
+<div class="viewcode-block" id="calculate_most_frequent_airports">
+<a class="viewcode-back" href="../../../modules/calculations.html#pilotlog.calculations.aggregations.calculate_most_frequent_airports">[docs]</a>
+<span class="k">def</span> <span class="nf">calculate_most_frequent_airports</span><span class="p">(</span><span class="n">airports</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">],</span> <span class="n">top_n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Get the most frequently visited airports.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        airports: List of airport statistics</span>
+<span class="sd">        top_n: Number of top airports to return</span>
+
+<span class="sd">    Returns:</span>
+<span class="sd">        Top N airports sorted by total visits (departures + arrivals)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">airport</span> <span class="ow">in</span> <span class="n">airports</span><span class="p">:</span>
+        <span class="n">airport</span><span class="p">[</span><span class="s2">&quot;total_visits&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">airport</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;departures&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">airport</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;arrivals&quot;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+
+    <span class="n">sorted_airports</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">airports</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">a</span><span class="p">:</span> <span class="n">a</span><span class="p">[</span><span class="s2">&quot;total_visits&quot;</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">sorted_airports</span><span class="p">[:</span><span class="n">top_n</span><span class="p">]</span></div>
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../../index.html">PilotLog</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/main.html">Main</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/config.html">Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/api.html">API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/database.html">Database</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/importers.html">Importers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../modules/calculations.html">Calculations</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../../index.html">Documentation overview</a><ul>
+  <li><a href="../../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2026, Darrell.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 9.1.0</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
