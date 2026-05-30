@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pilotlog.database.models import Flight, ImportBatch
-from pilotlog.database.queries import check_duplicate_flight
+from pilotlog.database.queries import check_duplicate_flight, sync_missing_airports
 from pilotlog.importers.base import BaseImporter, ImportResult, ParsedFlight
 
 logger = logging.getLogger(__name__)
@@ -375,6 +375,9 @@ class SWACSVImporter(BaseImporter):
         import_batch.rows_duplicate = result.rows_duplicate
 
         await session.commit()
+
+        # Sync any new airports that appeared in this import
+        await sync_missing_airports(session)
 
         logger.info(
             f"Imported {result.rows_imported} flights from {file_path.name} "

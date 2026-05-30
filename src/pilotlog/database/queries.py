@@ -1,5 +1,9 @@
 """Database query functions for PilotLog."""
 
+import csv
+import io
+import logging
+import urllib.request
 from datetime import date
 from typing import Optional
 
@@ -7,6 +11,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pilotlog.database.models import Airport, Flight, ImportBatch
+
+logger = logging.getLogger(__name__)
+
+OURAIRPORTS_URL = "https://davidmegginson.github.io/ourairports-data/airports.csv"
 
 
 async def get_flights(
@@ -336,3 +344,72 @@ async def get_import_batch(session: AsyncSession, batch_id: str) -> Optional[Imp
     """Get an import batch by ID."""
     result = await session.execute(select(ImportBatch).where(ImportBatch.id == batch_id))
     return result.scalar_one_or_none()
+
+
+async def sync_missing_airports(session: AsyncSession) -> list[str]:
+    """Find airports referenced in flights but missing from the airports table,
+    and fetch their data from OurAirports. Returns list of newly added ICAO codes."""
+    # Find ICAO codes in flights that aren't in the airports table
+    flights_icao = (
+        select(Flight.origin.label("icao"))
+        .union(select(Flight.destination.label("icao")))
+        .subquery()
+    )
+    missing_query = (
+        select(flights_icao.c.icao)
+        .where(flights_icao.c.icao.notin_(select(Airport.icao)))
+    )
+    result = await session.execute(missing_query)
+    missing = {row[0] for row in result.all()}
+
+    if not missing:
+        return []
+
+    logger.info(f"Syncing {len(missing)} missing airports: {sorted(missing)}")
+
+    # Download OurAirports data and find the missing ones
+    try:
+        with urllib.request.urlopen(OURAIRPORTS_URL, timeout=15) as response:
+            csv_data = response.read().decode("utf-8")
+    except Exception as e:
+        logger.warning(f"Could not download airport data: {e}")
+        return []
+
+    added = []
+    reader = csv.DictReader(io.StringIO(csv_data))
+    for row in reader:
+        icao = row.get("ident", "").upper()
+        if icao not in missing:
+            continue
+        if row.get("type") == "closed":
+            continue
+
+        try:
+            lat = float(row["latitude_deg"]) if row.get("latitude_deg") else None
+            lon = float(row["longitude_deg"]) if row.get("longitude_deg") else None
+        except (ValueError, TypeError):
+            continue
+        if lat is None or lon is None:
+            continue
+
+        airport = Airport(
+            icao=icao,
+            iata=row.get("iata_code") or None,
+            name=row.get("name"),
+            city=row.get("municipality"),
+            country=row.get("iso_country"),
+            latitude=lat,
+            longitude=lon,
+        )
+        await session.merge(airport)
+        added.append(icao)
+
+    if added:
+        await session.commit()
+        logger.info(f"Added {len(added)} airports: {sorted(added)}")
+
+    still_missing = missing - set(added)
+    if still_missing:
+        logger.warning(f"Could not find airport data for: {sorted(still_missing)}")
+
+    return added
