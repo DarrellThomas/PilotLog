@@ -449,11 +449,29 @@ def format_alert(trip, score, breakdown):
     else:
         legal_tag = f" [ILLEGAL - {conflict}]"
 
+    # Commutability check for non-home bases
+    commute_line = ""
+    if base != HOME_BASE:
+        try:
+            from pilotlog.swapa.commute import check_commutability, format_commute_tag
+            commute = check_commutability(trip)
+            commute_tag = format_commute_tag(commute)
+            if commute.get('tier') == 'NO_GO':
+                commute_line = f"\n{commute['details']}"
+            elif commute.get('tier') not in ('HOME', 'EASY', None):
+                commute_line = f"\n{commute['details']}"
+        except Exception:
+            commute_tag = ""
+    else:
+        commute_tag = ""
+
     lines = [
-        f"OT {score}/100 | {tid} {base} {date_range} ({num_days}d){urgency_tag}{legal_tag}",
+        f"OT {score}/100 | {tid} {base} {date_range} ({num_days}d){urgency_tag}{legal_tag}{commute_tag}",
         f"{avg_lpd} legs/day | {tfp} TFP (${dollars:,}){pay_tag}",
         f"Rpt {report_str} | Closes {close_str} | {routing}",
     ]
+    if commute_line:
+        lines.append(commute_line.strip())
     return '\n'.join(lines)
 
 
