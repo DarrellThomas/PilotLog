@@ -269,3 +269,52 @@ async def list_airports(
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+@router.get("/seniority")
+async def get_seniority(
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Get current seniority snapshot with base positions and retirement projections."""
+    import json as json_mod
+    from pathlib import Path
+
+    snapshot_file = Path(__file__).parent.parent / "swapa" / "data" / "seniority_snapshot.json"
+    if not snapshot_file.exists():
+        raise HTTPException(status_code=404, detail="No seniority data. Run scan_seniority.py first.")
+
+    with open(snapshot_file) as f:
+        return json_mod.load(f)
+
+
+@router.get("/seniority/history")
+async def get_seniority_history(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    base: Optional[str] = Query(None, description="Filter by base code"),
+    limit: int = Query(52, ge=1, le=520, description="Max snapshots to return"),
+):
+    """Get seniority position history for trend charts."""
+    from sqlalchemy import select, func
+    from pilotlog.database.models import SenioritySnapshot
+
+    query = select(SenioritySnapshot).order_by(SenioritySnapshot.captured_at.desc())
+    if base:
+        query = query.where(SenioritySnapshot.base == base.upper())
+    query = query.limit(limit)
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    return {
+        "snapshots": [
+            {
+                "captured_at": r.captured_at.isoformat(),
+                "base": r.base,
+                "position": r.base_position,
+                "total": r.base_total,
+                "system_seniority": r.system_seniority,
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+    }

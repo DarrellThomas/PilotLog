@@ -6,10 +6,9 @@ and computes where they'd fall in the seniority order at every base.
 
 import csv
 import logging
-import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
 
@@ -202,4 +201,163 @@ def format_seniority_report(result):
             f"  top {100 - info['percentile']:>4.0f}%{marker}"
         )
 
+    # Retirement projections if available
+    if result.get("retirement_projections"):
+        lines.append("")
+        lines.append("Retirement Projections (position improvement as senior pilots retire):")
+        lines.append(f"  {'Base':>5s}  {'Now':>5s}  {'6 mo':>5s}  {'1 yr':>5s}  {'2 yr':>5s}  {'Retirements 1yr':>15s}")
+        lines.append(f"  {'—'*5}  {'—'*5}  {'—'*5}  {'—'*5}  {'—'*5}  {'—'*15}")
+        for base, proj in sorted(result["retirement_projections"].items(),
+                                  key=lambda x: x[1]["position_now"]):
+            marker = " <<<" if base == pilot["base"] else ""
+            lines.append(
+                f"  {base:>5s}  {proj['position_now']:>5d}  "
+                f"{proj['position_6mo']:>5d}  "
+                f"{proj['position_1yr']:>5d}  "
+                f"{proj['position_2yr']:>5d}  "
+                f"{proj['retirements_1yr']:>15d}{marker}"
+            )
+
     return "\n".join(lines)
+
+
+def _parse_date(date_str):
+    """Parse M/D/YYYY date string to datetime."""
+    if not date_str:
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def compute_retirement_projections(pilots, employee_id):
+    """Project seniority position improvement as senior pilots retire.
+
+    For each base, count how many pilots senior to you retire in
+    6 months, 1 year, and 2 years. Subtract those from your current
+    position to get projected future position.
+
+    Returns dict: {base: {position_now, position_6mo, position_1yr,
+                           position_2yr, retirements_6mo, retirements_1yr,
+                           retirements_2yr}}
+    """
+    pilot = None
+    for p in pilots:
+        if p["emp_id"] == str(employee_id):
+            pilot = p
+            break
+    if not pilot:
+        return {}
+
+    my_seniority = pilot["system_seniority"]
+    now = datetime.now()
+    horizons = {
+        "6mo": now + timedelta(days=182),
+        "1yr": now + timedelta(days=365),
+        "2yr": now + timedelta(days=730),
+    }
+
+    # Group by base
+    bases = {}
+    for p in pilots:
+        b = p["base"]
+        if b not in bases:
+            bases[b] = []
+        bases[b].append(p)
+
+    projections = {}
+    for base, base_pilots in bases.items():
+        # Pilots senior to me at this base
+        senior_pilots = [p for p in base_pilots
+                         if p["system_seniority"] < my_seniority]
+        position_now = len(senior_pilots) + 1
+
+        retirements = {"6mo": 0, "1yr": 0, "2yr": 0}
+        for sp in senior_pilots:
+            ret_date = _parse_date(sp["retirement_date"])
+            if not ret_date:
+                continue
+            for key, horizon in horizons.items():
+                if ret_date <= horizon:
+                    retirements[key] += 1
+
+        projections[base] = {
+            "position_now": position_now,
+            "position_6mo": position_now - retirements["6mo"],
+            "position_1yr": position_now - retirements["1yr"],
+            "position_2yr": position_now - retirements["2yr"],
+            "retirements_6mo": retirements["6mo"],
+            "retirements_1yr": retirements["1yr"],
+            "retirements_2yr": retirements["2yr"],
+            "total": len(base_pilots),
+        }
+
+    return projections
+
+
+def save_snapshot_to_db(result):
+    """Store seniority snapshot in the PilotLog database."""
+    import asyncio
+    from pilotlog.config import settings
+    from pilotlog.database.connection import init_db, get_session
+    from pilotlog.database.models import SenioritySnapshot
+
+    async def _save():
+        settings.ensure_directories()
+        await init_db()
+        async with get_session() as session:
+            now = datetime.now()
+            emp_id = result["pilot"]["emp_id"]
+
+            # Store a row per base
+            for base, info in result["all_bases"].items():
+                snapshot = SenioritySnapshot(
+                    captured_at=now,
+                    employee_id=emp_id,
+                    system_seniority=result["system_seniority"],
+                    base=base,
+                    base_position=info["position"],
+                    base_total=info["total"],
+                )
+                session.add(snapshot)
+            await session.commit()
+            logger.info(f"Saved {len(result['all_bases'])} seniority snapshots to DB")
+
+    asyncio.run(_save())
+
+
+def get_seniority_history(employee_id=None, base=None, limit=52):
+    """Query seniority history from the DB.
+
+    Returns list of snapshots, newest first. Useful for trend charts.
+    """
+    import asyncio
+    from sqlalchemy import select
+    from pilotlog.config import settings
+    from pilotlog.database.connection import init_db, get_session
+    from pilotlog.database.models import SenioritySnapshot
+
+    async def _query():
+        settings.ensure_directories()
+        await init_db()
+        async with get_session() as session:
+            query = select(SenioritySnapshot)
+            if employee_id:
+                query = query.where(SenioritySnapshot.employee_id == str(employee_id))
+            if base:
+                query = query.where(SenioritySnapshot.base == base)
+            query = query.order_by(SenioritySnapshot.captured_at.desc()).limit(limit)
+            result = await session.execute(query)
+            rows = result.scalars().all()
+            return [{
+                "captured_at": r.captured_at.isoformat(),
+                "base": r.base,
+                "position": r.base_position,
+                "total": r.base_total,
+                "system_seniority": r.system_seniority,
+            } for r in rows]
+
+    return asyncio.run(_query())

@@ -40,7 +40,8 @@ def main():
 
     from pilotlog.swapa.seniority import (
         download_seniority_csv, parse_seniority_csv,
-        compute_base_positions, format_seniority_report, _get_employee_id,
+        compute_base_positions, compute_retirement_projections,
+        format_seniority_report, save_snapshot_to_db, _get_employee_id,
     )
 
     emp_id = _get_employee_id()
@@ -61,16 +62,27 @@ def main():
     logger.info(f"Parsed {len(pilots)} pilots")
 
     result = compute_base_positions(pilots, emp_id)
+
+    # Add retirement projections
+    projections = compute_retirement_projections(pilots, emp_id)
+    result["retirement_projections"] = projections
+
     report = format_seniority_report(result)
     print(report)
 
-    # Save snapshot
+    # Save to JSON
     import json
     snapshot_dir = Path(__file__).parent.parent / "src" / "pilotlog" / "swapa" / "data"
     snapshot_file = snapshot_dir / "seniority_snapshot.json"
     with open(snapshot_file, 'w') as f:
         json.dump(result, f, indent=2, default=str)
     logger.info(f"Snapshot saved: {snapshot_file}")
+
+    # Save to DB for historical tracking
+    try:
+        save_snapshot_to_db(result)
+    except Exception as e:
+        logger.error(f"DB save failed: {e}")
 
 
 if __name__ == "__main__":
