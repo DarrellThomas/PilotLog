@@ -124,6 +124,77 @@ class ImportBatch(Base):
     flights: Mapped[list["Flight"]] = relationship(back_populates="import_batch")
 
 
+class OpenTimeTrip(Base):
+    """Snapshot of an available OT/TTGA trip."""
+
+    __tablename__ = "open_time_trips"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trip_id: Mapped[str] = mapped_column(String(10), nullable=False)
+    base: Mapped[Optional[str]] = mapped_column(String(4))
+    source: Mapped[str] = mapped_column(String(10), nullable=False)
+    num_days: Mapped[Optional[int]] = mapped_column(Integer)
+    total_legs: Mapped[Optional[int]] = mapped_column(Integer)
+    total_tfp: Mapped[Optional[float]] = mapped_column(Float)
+    pay_type: Mapped[Optional[str]] = mapped_column(String(10))
+    report_time: Mapped[Optional[str]] = mapped_column(String(20))
+    close_time: Mapped[Optional[str]] = mapped_column(String(20))
+    date_range: Mapped[Optional[str]] = mapped_column(String(30))
+    routing: Mapped[Optional[str]] = mapped_column(String(500))
+    score: Mapped[Optional[int]] = mapped_column(Integer)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    alerted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    scan_batch_id: Mapped[Optional[str]] = mapped_column(String(36))
+
+    __table_args__ = (
+        Index("ix_open_time_trips_trip_source", "trip_id", "source"),
+        Index("ix_open_time_trips_base", "base"),
+        Index("ix_open_time_trips_first_seen", "first_seen"),
+    )
+
+
+class SenioritySnapshot(Base):
+    """Pilot's seniority position at a point in time."""
+
+    __tablename__ = "seniority_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    employee_id: Mapped[str] = mapped_column(String(10), nullable=False)
+    system_seniority: Mapped[Optional[int]] = mapped_column(Integer)
+    base: Mapped[Optional[str]] = mapped_column(String(4))
+    base_position: Mapped[Optional[int]] = mapped_column(Integer)
+    base_total: Mapped[Optional[int]] = mapped_column(Integer)
+
+    __table_args__ = (
+        Index("ix_seniority_snapshots_employee_captured", "employee_id", "captured_at"),
+        Index("ix_seniority_snapshots_base", "base"),
+    )
+
+
+class TripBaseline(Base):
+    """Check-in baseline for pay audit."""
+
+    __tablename__ = "trip_baselines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trip_id: Mapped[str] = mapped_column(String(10), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+    trip_data: Mapped[Optional[str]] = mapped_column(Text)
+    total_tfp: Mapped[Optional[float]] = mapped_column(Float)
+    num_days: Mapped[Optional[int]] = mapped_column(Integer)
+    routing_summary: Mapped[Optional[str]] = mapped_column(String(200))
+
+    __table_args__ = (Index("ix_trip_baselines_trip_id", "trip_id"),)
+
+
 class SchemaVersion(Base):
     """Track database schema version for migrations."""
 

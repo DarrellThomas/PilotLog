@@ -73,3 +73,17 @@ htmlcov/
 
 # Claude Code
 .claude/
+
+# SWAPA data — credentials, cookies, scraped data, baselines (personal/sensitive)
+src/pilotlog/swapa/data/baselines/
+src/pilotlog/swapa/data/references/
+src/pilotlog/swapa/data/swapa_cookies.json
+src/pilotlog/swapa/data/ot_snapshot.json
+src/pilotlog/swapa/data/ttga_snapshot.json
+src/pilotlog/swapa/data/ot_alerts.jsonl
+src/pilotlog/swapa/data/.ot_scan.lock
+src/pilotlog/swapa/data/swapa_*.json
+src/pilotlog/swapa/data/logbook_downloads/
+src/pilotlog/swapa/data/ot_debug.json
+src/pilotlog/swapa/data/seniority_list.csv
+src/pilotlog/swapa/data/seniority_snapshot.json
