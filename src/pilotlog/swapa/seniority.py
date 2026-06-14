@@ -127,10 +127,13 @@ def compute_base_positions(pilots, employee_id):
         raise ValueError(f"Employee {employee_id} not found in seniority list")
 
     my_seniority = pilot["system_seniority"]
+    my_seat = pilot["seat"]  # CA or FO
 
-    # Group by base (CA only for base position — you're a captain)
+    # Group by base, filtered to same seat (CA vs CA, not CA vs FO)
     bases = {}
     for p in pilots:
+        if p["seat"] != my_seat:
+            continue
         b = p["base"]
         if b not in bases:
             bases[b] = []
@@ -253,6 +256,7 @@ def compute_retirement_projections(pilots, employee_id):
         return {}
 
     my_seniority = pilot["system_seniority"]
+    my_seat = pilot["seat"]
     now = datetime.now()
     horizons = {
         "6mo": now + timedelta(days=182),
@@ -260,9 +264,11 @@ def compute_retirement_projections(pilots, employee_id):
         "2yr": now + timedelta(days=730),
     }
 
-    # Group by base
+    # Group by base, same seat only
     bases = {}
     for p in pilots:
+        if p["seat"] != my_seat:
+            continue
         b = p["base"]
         if b not in bases:
             bases[b] = []
