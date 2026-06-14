@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     db_path: Path = Path.home() / ".pilotlog" / "logbook.db"
 
     # Server
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8090
 
     # Logging

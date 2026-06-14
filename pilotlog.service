@@ -1,0 +1,15 @@
+[Unit]
+Description=PilotLog — flight logbook and SWAPA tools
+After=network.target
+
+[Service]
+Type=simple
+User=darrell
+WorkingDirectory=/home/darrell/sandbox/PilotLog
+Environment=PYTHONPATH=/home/darrell/sandbox/PilotLog/src
+ExecStart=/home/darrell/sandbox/PilotLog/venv/bin/python -m pilotlog
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
