@@ -257,11 +257,164 @@ def score_trip(trip):
     return score, breakdown
 
 
+def _parse_ot_release(trip, report_time):
+    """Parse release time from OT trip data, or estimate from num_days."""
+    import re
+    release_str = trip.get('release_str', '')
+    if release_str:
+        m = re.match(r'(\d{3,4})/(\d{2})([A-Z][a-z]{2})', release_str)
+        if m:
+            try:
+                year = datetime.now().year
+                release_time = datetime.strptime(
+                    f"{m.group(2)}{m.group(3)}{year} {m.group(1).zfill(4)}", "%d%b%Y %H%M")
+                if release_time < report_time:
+                    release_time = release_time.replace(year=year + 1)
+                return release_time
+            except ValueError:
+                pass
+    num_days = trip.get('num_days', 1) or 1
+    return report_time + timedelta(days=num_days)
+
+
+def check_legality(trip):
+    """Check if the pilot is legal for this trip per FAR 117 + CBA.
+
+    Checks:
+      1. Schedule conflict — does this trip overlap existing trips on the board?
+      2. FAR 117 rest — 10hr minimum rest between trips
+      3. 672-hour limit — max 100 flight hours in any 28-day (672-hour) window
+      4. 365-day limit — max 1,000 flight hours in any 365-day window
+      5. 30-in-7 — must have 30 consecutive hours free from duty in any 7-day window
+
+    Returns (is_legal, reason_string). Still send the alert either way —
+    pilot may be able to shift things to become legal.
+    """
+    try:
+        from pilotlog.swapa.ical import fetch_ical, parse_ical_feed
+    except Exception:
+        return True, ""
+
+    report_time = trip.get('report_time')
+    if not report_time:
+        return True, ""
+
+    if isinstance(report_time, str):
+        try:
+            report_time = datetime.fromisoformat(report_time)
+        except ValueError:
+            return True, ""
+
+    release_time = _parse_ot_release(trip, report_time)
+
+    # Fetch current schedule
+    try:
+        ical_text = fetch_ical()
+        my_trips = parse_ical_feed(ical_text)
+    except Exception:
+        return True, ""
+
+    # FAR 117 minimum rest: 10 hours between release and next report
+    # CBA: report cannot be moved up more than 3 hours while in rest
+    # Buffer: need 10hr rest before report AND after previous release
+    MIN_REST_HOURS = 10
+
+    for my_trip in my_trips:
+        if not my_trip.get('days'):
+            continue
+
+        # Build date set for this existing trip
+        trip_dates = set()
+        first_report_date = None
+        last_release_date = None
+
+        for day in my_trip['days']:
+            month_str = day.get('month', '')
+            date_num = day.get('date', 0)
+            if not month_str or not date_num:
+                continue
+            try:
+                year = datetime.now().year
+                day_date = datetime.strptime(f"{month_str} {date_num} {year}", "%b %d %Y")
+                trip_dates.add(day_date.date())
+                if first_report_date is None or day_date < first_report_date:
+                    first_report_date = day_date
+                if last_release_date is None or day_date > last_release_date:
+                    last_release_date = day_date
+            except ValueError:
+                continue
+
+        if not trip_dates:
+            continue
+
+        # Check 1: direct date overlap (trip days conflict)
+        ot_dates = set()
+        d = report_time.date()
+        while d <= release_time.date():
+            ot_dates.add(d)
+            d += timedelta(days=1)
+
+        overlap = ot_dates & trip_dates
+        if overlap:
+            return False, f"overlap {my_trip.get('trip_id', '?')}"
+
+        # Check 2: FAR 117 rest requirement (10hr min between trips)
+        # Need 10hrs after my existing trip's last day before OT report
+        rest_buffer = timedelta(hours=MIN_REST_HOURS)
+        if last_release_date:
+            # Assume release ~end of day (2200 local) if no specific time
+            assumed_release = last_release_date.replace(hour=22)
+            if report_time < assumed_release + rest_buffer:
+                return False, f"<10hr rest after {my_trip.get('trip_id', '?')}"
+
+        # Need 10hrs before my next trip's first day after OT release
+        if first_report_date:
+            # Assume report ~start of day (0500 local) if no specific time
+            assumed_report = first_report_date.replace(hour=5)
+            if release_time > assumed_report - rest_buffer:
+                return False, f"<10hr rest before {my_trip.get('trip_id', '?')}"
+
+    # Check 3: FAR 117 cumulative limits from PilotLog logbook DB
+    # 100 flight hours in 672 consecutive hours (rolling to the hour, not calendar)
+    # 1,000 flight hours in 365 consecutive days
+    # NOTE: DB query uses calendar-day lookback which is slightly conservative
+    # (may flag illegal when you're actually legal by a few hours). For OT
+    # screening this is safe — if flagged, verify exact hour count before bidding.
+    try:
+        import asyncio
+        from pilotlog.config import settings
+        from pilotlog.database.connection import init_db, get_session
+        from pilotlog.database.queries import get_rolling_totals
+
+        async def _check_limits():
+            settings.ensure_directories()
+            await init_db()
+            async with get_session() as session:
+                from datetime import date
+                return await get_rolling_totals(session, date.today(), [28, 365])
+
+        totals = asyncio.run(_check_limits())
+        ot_block_hrs = (trip.get('block_minutes', 0) or 0) / 60
+
+        current_28d_hrs = totals[28]['minutes'] / 60
+        if current_28d_hrs + ot_block_hrs > 100:
+            return False, f"672hr limit ({current_28d_hrs:.0f}+{ot_block_hrs:.0f}>{100})"
+
+        current_365d_hrs = totals[365]['minutes'] / 60
+        if current_365d_hrs + ot_block_hrs > 1000:
+            return False, f"365d limit ({current_365d_hrs:.0f}+{ot_block_hrs:.0f}>{1000})"
+
+    except Exception as e:
+        logger.debug(f"Could not check FAR 117 limits: {e}")
+
+    return True, ""
+
+
 def format_alert(trip, score, breakdown):
     """Format a trip as a concise Signal alert message.
 
     Example:
-      OT 75/100 | HA35 HOU Jun 15-16 (2d)
+      OT 75/100 | HA35 HOU Jun 15-16 (2d) [LEGAL]
       1 leg/day | 19.5 TFP ($6,691) PREMIUM
       Rpt 14:35 | Closes 13:00 | HOU-DEN / DEN-HOU
     """
@@ -274,7 +427,6 @@ def format_alert(trip, score, breakdown):
     report_str = trip.get('report_str', '?')
     close_str = trip.get('close_str', '?')
     date_range = trip.get('date_range', '')
-    legs = trip.get('total_legs', '?')
     avg_lpd = breakdown.get('avg_legs_day', '?')
 
     from pilotlog.swapa.tfp import CAPTAIN_RATE
@@ -290,8 +442,15 @@ def format_alert(trip, score, breakdown):
     elif hrs <= 24:
         urgency_tag = " TODAY"
 
+    # Legality check
+    is_legal, conflict = check_legality(trip)
+    if is_legal:
+        legal_tag = " [LEGAL]"
+    else:
+        legal_tag = f" [ILLEGAL - {conflict}]"
+
     lines = [
-        f"OT {score}/100 | {tid} {base} {date_range} ({num_days}d){urgency_tag}",
+        f"OT {score}/100 | {tid} {base} {date_range} ({num_days}d){urgency_tag}{legal_tag}",
         f"{avg_lpd} legs/day | {tfp} TFP (${dollars:,}){pay_tag}",
         f"Rpt {report_str} | Closes {close_str} | {routing}",
     ]

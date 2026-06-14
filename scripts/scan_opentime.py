@@ -30,15 +30,17 @@ def setup_logging():
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     root = logging.getLogger()
     if root.handlers:
-        return  # already configured
+        return
     root.setLevel(logging.INFO)
     fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
     fh = logging.FileHandler(LOG_DIR / "ot_scanner.log")
     fh.setFormatter(fmt)
     root.addHandler(fh)
-    sh = logging.StreamHandler()
-    sh.setFormatter(fmt)
-    root.addHandler(sh)
+    # Only add console handler if running interactively (not cron)
+    if sys.stdout.isatty():
+        sh = logging.StreamHandler()
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
 
 
 def acquire_lock():
