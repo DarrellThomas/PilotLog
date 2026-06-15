@@ -33,6 +33,12 @@ ALERT_LOG = DATA_DIR / "ot_alerts.jsonl"
 
 HOME_BASE = "HOU"
 
+# Only Signal-alert on Hourly Open Time (HOT): trips reporting within this many
+# hours. Daily Open Time (DOT) — postings further out — is still scored and
+# logged, just not texted. This is the HOU-local last-minute edge; the days-out
+# bulk inventory was too noisy. Bump this to widen the alert window.
+HOT_WINDOW_HOURS = 24
+
 # SWA bases (2026)
 SWA_BASES = [
     "ATL", "BAL", "BWI", "DAL", "DEN", "HOU", "LAS", "LAX",
@@ -765,7 +771,15 @@ def scan_open_time(headless=True, alert_threshold=40, dry_run=False):
                 trip = current_index[tid]
                 score, breakdown = score_trip(trip)
 
-                if score >= alert_threshold:
+                # Only text Hourly Open Time (near-term). Daily Open Time
+                # (reports beyond the HOT window) is logged but not sent.
+                is_hot = breakdown.get('hours_to_report', 999) <= HOT_WINDOW_HOURS
+
+                # Only text trips Darrell can legally pick up (no schedule
+                # conflict, no FAR 117 limit bust). Illegal ones still logged.
+                is_legal, _conflict = check_legality(trip)
+
+                if score >= alert_threshold and is_hot and is_legal:
                     msg = format_alert(trip, score, breakdown)
 
                     if dry_run:
