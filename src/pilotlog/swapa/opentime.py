@@ -293,23 +293,23 @@ def check_legality(trip):
       4. 365-day limit — max 1,000 flight hours in any 365-day window
       5. 30-in-7 — must have 30 consecutive hours free from duty in any 7-day window
 
-    Returns (is_legal, reason_string). Still send the alert either way —
-    pilot may be able to shift things to become legal.
+    Returns (is_legal, reason_string). Fail CLOSED — if we can't determine
+    legality (iCal down, parse error), assume illegal to avoid spam.
     """
     try:
         from pilotlog.swapa.ical import fetch_ical, parse_ical_feed
     except Exception:
-        return True, ""
+        return False, "ical module unavailable"
 
     report_time = trip.get('report_time')
     if not report_time:
-        return True, ""
+        return False, "no report_time"
 
     if isinstance(report_time, str):
         try:
             report_time = datetime.fromisoformat(report_time)
         except ValueError:
-            return True, ""
+            return False, "bad report_time"
 
     release_time = _parse_ot_release(trip, report_time)
 
@@ -317,13 +317,26 @@ def check_legality(trip):
     try:
         ical_text = fetch_ical()
         my_trips = parse_ical_feed(ical_text)
-    except Exception:
-        return True, ""
+    except Exception as e:
+        return False, f"schedule fetch failed: {e}"
 
     # FAR 117 minimum rest: 10 hours between release and next report
     # CBA: report cannot be moved up more than 3 hours while in rest
     # Buffer: need 10hr rest before report AND after previous release
     MIN_REST_HOURS = 10
+
+    # Build OT trip date range
+    ot_dates = set()
+    d = report_time.date()
+    while d <= release_time.date():
+        ot_dates.add(d)
+        d += timedelta(days=1)
+
+    # Only check trips within a relevant window (3 days either side of OT trip)
+    # to avoid false positives from distant past/future trips.
+    proximity_buffer = timedelta(days=3)
+    ot_start = report_time - proximity_buffer
+    ot_end = release_time + proximity_buffer
 
     for my_trip in my_trips:
         if not my_trip.get('days'):
@@ -353,29 +366,30 @@ def check_legality(trip):
         if not trip_dates:
             continue
 
-        # Check 1: direct date overlap (trip days conflict)
-        ot_dates = set()
-        d = report_time.date()
-        while d <= release_time.date():
-            ot_dates.add(d)
-            d += timedelta(days=1)
+        # Skip trips entirely outside the proximity window
+        if last_release_date and last_release_date < ot_start:
+            continue
+        if first_report_date and first_report_date > ot_end:
+            continue
 
+        # Check 1: direct date overlap (trip days conflict)
         overlap = ot_dates & trip_dates
         if overlap:
             return False, f"overlap {my_trip.get('trip_id', '?')}"
 
         # Check 2: FAR 117 rest requirement (10hr min between trips)
-        # Need 10hrs after my existing trip's last day before OT report
         rest_buffer = timedelta(hours=MIN_REST_HOURS)
-        if last_release_date:
-            # Assume release ~end of day (2200 local) if no specific time
+
+        # Need 10hrs after my existing trip's last day before OT report
+        # (only relevant if existing trip ends BEFORE OT starts)
+        if last_release_date and last_release_date.date() < report_time.date():
             assumed_release = last_release_date.replace(hour=22)
             if report_time < assumed_release + rest_buffer:
                 return False, f"<10hr rest after {my_trip.get('trip_id', '?')}"
 
         # Need 10hrs before my next trip's first day after OT release
-        if first_report_date:
-            # Assume report ~start of day (0500 local) if no specific time
+        # (only relevant if existing trip starts AFTER OT ends)
+        if first_report_date and first_report_date.date() > release_time.date():
             assumed_report = first_report_date.replace(hour=5)
             if release_time > assumed_report - rest_buffer:
                 return False, f"<10hr rest before {my_trip.get('trip_id', '?')}"
@@ -506,7 +520,7 @@ def save_snapshot(trips, path=None):
         }, f, indent=2, default=str)
 
 
-def log_alert(trip, score, breakdown, sent):
+def log_alert(trip, score, breakdown, sent, legal=None, conflict=""):
     """Append alert to JSONL log."""
     ALERT_LOG.parent.mkdir(parents=True, exist_ok=True)
     entry = {
@@ -515,6 +529,8 @@ def log_alert(trip, score, breakdown, sent):
         'base': trip.get('base'),
         'score': score,
         'sent': sent,
+        'legal': legal,
+        'conflict': conflict,
         'tfp': trip.get('total_tfp'),
         'pay_type': trip.get('pay_type'),
         **breakdown,
@@ -777,7 +793,7 @@ def scan_open_time(headless=True, alert_threshold=40, dry_run=False):
 
                 # Only text trips Darrell can legally pick up (no schedule
                 # conflict, no FAR 117 limit bust). Illegal ones still logged.
-                is_legal, _conflict = check_legality(trip)
+                is_legal, conflict = check_legality(trip)
 
                 if score >= alert_threshold and is_hot and is_legal:
                     msg = format_alert(trip, score, breakdown)
@@ -791,10 +807,12 @@ def scan_open_time(headless=True, alert_threshold=40, dry_run=False):
                         sent = send_signal_alert(msg)
                         results['alerts_sent'] += 1 if sent else 0
 
-                    log_alert(trip, score, breakdown, sent)
+                    log_alert(trip, score, breakdown, sent,
+                              legal=True, conflict="")
                     alerts.append({'trip_id': tid, 'score': score, 'message': msg})
                 else:
-                    log_alert(trip, score, breakdown, False)
+                    log_alert(trip, score, breakdown, False,
+                              legal=is_legal, conflict=conflict)
 
             results['alerts'] = alerts
 
