@@ -30,6 +30,7 @@ DATA_DIR = Path(__file__).parent / "data"
 SNAPSHOT_FILE = DATA_DIR / "ot_snapshot.json"
 TTGA_SNAPSHOT_FILE = DATA_DIR / "ttga_snapshot.json"
 ALERT_LOG = DATA_DIR / "ot_alerts.jsonl"
+ALERTED_FILE = DATA_DIR / "ot_alerted.json"  # dedup: trip IDs already sent
 
 HOME_BASE = "HOU"
 
@@ -316,7 +317,11 @@ def check_legality(trip):
     # Fetch current schedule
     try:
         ical_text = fetch_ical()
+        if not ical_text or len(ical_text) < 100:
+            return False, "schedule fetch returned empty (iCal 503?)"
         my_trips = parse_ical_feed(ical_text)
+        if not my_trips:
+            return False, "no trips parsed from schedule"
     except Exception as e:
         return False, f"schedule fetch failed: {e}"
 
@@ -518,6 +523,27 @@ def save_snapshot(trips, path=None):
             'count': len(trips),
             'trips': list(trips.values()) if isinstance(trips, dict) else trips,
         }, f, indent=2, default=str)
+
+
+def load_alerted():
+    """Load set of trip IDs we've already sent alerts for (dedup)."""
+    if not ALERTED_FILE.exists():
+        return {}
+    try:
+        with open(ALERTED_FILE) as f:
+            data = json.load(f)
+        # Expire entries older than 48 hours
+        cutoff = (datetime.now() - timedelta(hours=48)).isoformat()
+        return {k: v for k, v in data.items() if v > cutoff}
+    except Exception:
+        return {}
+
+
+def save_alerted(alerted):
+    """Save alerted trip IDs with timestamps."""
+    ALERTED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(ALERTED_FILE, 'w') as f:
+        json.dump(alerted, f, indent=2)
 
 
 def log_alert(trip, score, breakdown, sent, legal=None, conflict=""):
@@ -783,6 +809,7 @@ def scan_open_time(headless=True, alert_threshold=40, dry_run=False):
 
             # Score and alert on new trips
             alerts = []
+            alerted = load_alerted()
             for tid in sorted(new_trip_ids):
                 trip = current_index[tid]
                 score, breakdown = score_trip(trip)
@@ -795,7 +822,10 @@ def scan_open_time(headless=True, alert_threshold=40, dry_run=False):
                 # conflict, no FAR 117 limit bust). Illegal ones still logged.
                 is_legal, conflict = check_legality(trip)
 
-                if score >= alert_threshold and is_hot and is_legal:
+                # Dedup: don't re-alert on trips we've already sent
+                already_sent = tid in alerted
+
+                if score >= alert_threshold and is_hot and is_legal and not already_sent:
                     msg = format_alert(trip, score, breakdown)
 
                     if dry_run:
@@ -807,13 +837,17 @@ def scan_open_time(headless=True, alert_threshold=40, dry_run=False):
                         sent = send_signal_alert(msg)
                         results['alerts_sent'] += 1 if sent else 0
 
+                    if sent or dry_run:
+                        alerted[tid] = datetime.now().isoformat()
                     log_alert(trip, score, breakdown, sent,
                               legal=True, conflict="")
                     alerts.append({'trip_id': tid, 'score': score, 'message': msg})
                 else:
+                    reason = conflict if not is_legal else ("dedup" if already_sent else "")
                     log_alert(trip, score, breakdown, False,
-                              legal=is_legal, conflict=conflict)
+                              legal=is_legal, conflict=reason)
 
+            save_alerted(alerted)
             results['alerts'] = alerts
 
             # Save new snapshot
