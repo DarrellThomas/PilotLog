@@ -49,8 +49,8 @@ async def sample_flights(db_session):
             is_deadhead=False,
             pic_takeoff=True,
             pic_landing=True,
-            crew_name="ZURCA JULIAN",
-            crew_id="114706",
+            crew_name="DOE JOHN",
+            crew_id="100001",
         ),
         Flight(
             source="swa",
@@ -62,8 +62,8 @@ async def sample_flights(db_session):
             tail_number="N8772M",
             aircraft_type="B737-MAX7",
             is_deadhead=False,
-            crew_name="ZURCA JULIAN",
-            crew_id="114706",
+            crew_name="DOE JOHN",
+            crew_id="100001",
         ),
         Flight(
             source="swa",
@@ -122,12 +122,12 @@ class TestFlightsEndpoint:
     @pytest.mark.asyncio
     async def test_get_flights_filter_by_crew(self, client, sample_flights):
         """Test filtering flights by crew name."""
-        response = await client.get("/api/flights?crew=ZURCA")
+        response = await client.get("/api/flights?crew=DOE")
         assert response.status_code == 200
         data = response.json()
         assert len(data["flights"]) == 2
         for flight in data["flights"]:
-            assert "ZURCA" in flight["crew_name"]
+            assert "DOE" in flight["crew_name"]
 
     @pytest.mark.asyncio
     async def test_get_flights_filter_by_date(self, client, sample_flights):

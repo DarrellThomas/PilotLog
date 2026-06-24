@@ -182,7 +182,7 @@ TAFB_RadialScale1_MinimumValue,TAFB_RadialScale1_MaximumValue,...
 0,1000,645,800,1000
 
 DATE,Flight,dhd,From,Depart,To,Arrive,Block,Tail_Number,A_C_Type,TakeOff,Landing,CoPilot
-2025-01-10,WN1052,,KHOU,8:58,KSAN,12:10,312,N8867Q,737-7M8, , ,FO  ZURCA JULIAN *JACKSON* [114706]
+2025-01-10,WN1052,,KHOU,8:58,KSAN,12:10,312,N8867Q,737-7M8, , ,FO  DOE JOHN *JACK* [100001]
 ```
 
 **Field Mapping:**
@@ -460,7 +460,7 @@ Track import operations:
       "block_formatted": "5:12",
       "tail_number": "N8867Q",
       "aircraft_type": "B737-MAX7",
-      "crew_name": "ZURCA JULIAN",
+      "crew_name": "DOE JOHN",
       "is_deadhead": false
     }
   ],
@@ -711,10 +711,10 @@ Track import operations:
 ├─────────────────────────────────────────────────────────────────┤
 │  Date       │ Flight │ Route         │ Block │ Tail   │ Crew   │
 │─────────────┼────────┼───────────────┼───────┼────────┼────────│
-│  2025-01-10 │ WN1052 │ KHOU → KSAN   │ 5:12  │ N8867Q │ ZURCA  │
-│  2025-01-10 │ WN2361 │ KSAN → KMSY   │ 5:33  │ N8772M │ ZURCA  │
-│  2025-01-11 │ WN470  │ KMSY → KHOU   │ 1:15  │ N8842L │ ZURCA  │
-│  2025-01-11 │ WN112  │ KHOU → MROC   │ 5:35  │ N8757L │ ZURCA  │
+│  2025-01-10 │ WN1052 │ KHOU → KSAN   │ 5:12  │ N8867Q │ DOE    │
+│  2025-01-10 │ WN2361 │ KSAN → KMSY   │ 5:33  │ N8772M │ DOE    │
+│  2025-01-11 │ WN470  │ KMSY → KHOU   │ 1:15  │ N8842L │ DOE    │
+│  2025-01-11 │ WN112  │ KHOU → MROC   │ 5:35  │ N8757L │ DOE    │
 │  ...        │ ...    │ ...           │ ...   │ ...    │ ...    │
 ├─────────────────────────────────────────────────────────────────┤
 │  Showing 1-100 of 4,388 │ Total Block: 8,385:02 │ [◀ 1 2 3 ▶] │

@@ -88,8 +88,9 @@ AIRCRAFT_TYPE_MAP = {
     "737-5Y0": "B737-500",
 }
 
-# Regex pattern for parsing crew field
-# Examples: "FO  ZURCA JULIAN *JACKSON* [114706]", "CA  EVERS ROB *CKP* [58018]"
+# Regex pattern for parsing the crew (CoPilot) field — this is the OTHER pilot you
+# flew with; group(1) is THEIR seat, not the logbook owner's (see _parse_row).
+# Examples: "FO  DOE JOHN *JACK* [100001]", "CA  ROE RICHARD *CKP* [100002]"
 CREW_PATTERN = re.compile(
     r"^(FO|CA)\s+(.+?)\s*\[(\d+)\]$"
 )
@@ -134,10 +135,11 @@ class SWACSVImporter(BaseImporter):
         match = CREW_PATTERN.match(crew_str)
         if match:
             position = match.group(1)  # FO or CA
-            name = match.group(2).strip()
-            # Clean up name - remove asterisk nicknames for storage
-            name = re.sub(r"\s*\*[^*]+\*\s*", " ", name).strip()
-            name = re.sub(r"\s+", " ", name)  # Normalize whitespace
+            name = match.group(2)
+            # Strip nickname/tag markers — everything from the first asterisk onward.
+            # Handles paired "*GENE*", trailing "* *"/"*", and unpaired tags "*INTL".
+            name = name.split("*", 1)[0]
+            name = re.sub(r"\s+", " ", name).strip()  # Normalize whitespace
             crew_id = match.group(3)
             return position, name, crew_id
 
@@ -245,8 +247,13 @@ class SWACSVImporter(BaseImporter):
         pic_takeoff = self._parse_boolean(row.get("TakeOff", ""))
         pic_landing = self._parse_boolean(row.get("Landing", ""))
 
-        # Parse crew
-        crew_position, crew_name, crew_id = self._parse_crew(row.get("CoPilot", ""))
+        # Parse crew. The "CoPilot" column lists the OTHER pilot in the cockpit
+        # (their seat, name, and id). We store crew_name/crew_id as that crewmate,
+        # but crew_position is the LOGBOOK OWNER's seat — in a standard two-pilot
+        # crew that is the opposite of the listed pilot's seat (fly with an FO => you
+        # are CA; fly with a CA => you are FO).
+        crewmate_position, crew_name, crew_id = self._parse_crew(row.get("CoPilot", ""))
+        crew_position = {"FO": "CA", "CA": "FO"}.get(crewmate_position)
 
         return ParsedFlight(
             source=self.source_name,

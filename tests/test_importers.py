@@ -37,26 +37,26 @@ class TestSWACSVImporter:
 
     def test_parse_crew_fo(self, importer):
         """Test parsing FO crew field."""
-        position, name, crew_id = importer._parse_crew("FO  ZURCA JULIAN [114706]")
+        position, name, crew_id = importer._parse_crew("FO  DOE JOHN [100001]")
         assert position == "FO"
-        assert name == "ZURCA JULIAN"
-        assert crew_id == "114706"
+        assert name == "DOE JOHN"
+        assert crew_id == "100001"
 
     def test_parse_crew_ca(self, importer):
         """Test parsing CA crew field."""
-        position, name, crew_id = importer._parse_crew("CA  EVERS ROB *CKP* [58018]")
+        position, name, crew_id = importer._parse_crew("CA  ROE RICHARD *CKP* [100002]")
         assert position == "CA"
-        assert name == "EVERS ROB"  # Nickname removed
-        assert crew_id == "58018"
+        assert name == "ROE RICHARD"  # Nickname removed
+        assert crew_id == "100002"
 
     def test_parse_crew_with_nickname(self, importer):
         """Test parsing crew field with nickname."""
         position, name, crew_id = importer._parse_crew(
-            "FO  MOBLEY EUGENE *GENE* [131282]"
+            "FO  DOE JANE *JANIE* [100003]"
         )
         assert position == "FO"
-        assert name == "MOBLEY EUGENE"
-        assert crew_id == "131282"
+        assert name == "DOE JANE"
+        assert crew_id == "100003"
 
     def test_parse_crew_deadheading(self, importer):
         """Test parsing deadhead crew field."""
@@ -71,6 +71,30 @@ class TestSWACSVImporter:
         assert position is None
         assert name is None
         assert crew_id is None
+
+    def test_owner_seat_is_opposite_of_crewmate(self, importer):
+        """crew_position stores the OWNER's seat (opposite of the listed crewmate)."""
+        base = "DATE,Flight,dhd,From,Depart,To,Arrive,Block,Tail_Number,A_C_Type,TakeOff,Landing,CoPilot\n"
+        # Flew with an FO -> owner is CA
+        ca = importer._parse_row({
+            "DATE": "2025-01-10", "From": "KHOU", "To": "KSAN", "Block": "100",
+            "CoPilot": "FO  DOE JOHN [100001]",
+        })
+        assert ca.crew_position == "CA"
+        assert ca.crew_name == "DOE JOHN" and ca.crew_id == "100001"
+        # Flew with a CA (with a nickname marker) -> owner is FO, marker stripped
+        fo = importer._parse_row({
+            "DATE": "2014-02-19", "From": "KHOU", "To": "KSAN", "Block": "100",
+            "CoPilot": "CA  ROE RICHARD *CKP* [100002]",
+        })
+        assert fo.crew_position == "FO"
+        assert fo.crew_name == "ROE RICHARD" and fo.crew_id == "100002"
+        # Deadhead -> no operating seat
+        dh = importer._parse_row({
+            "DATE": "2025-01-10", "From": "KHOU", "To": "KSAN", "Block": "0",
+            "CoPilot": "Deadheading",
+        })
+        assert dh.crew_position is None
 
     def test_normalize_aircraft_type_737_700(self, importer):
         """Test normalizing 737-700 variants."""
@@ -121,8 +145,10 @@ class TestSWACSVImporter:
             assert flight1.is_deadhead is False
             assert flight1.pic_takeoff is True
             assert flight1.pic_landing is True
-            assert flight1.crew_name == "ZURCA JULIAN"
-            assert flight1.crew_id == "114706"
+            assert flight1.crew_name == "DOE JOHN"
+            assert flight1.crew_id == "100001"
+            # crew_position is the OWNER's seat (opposite of the listed FO crewmate)
+            assert flight1.crew_position == "CA"
 
             # Deadhead flight
             flight3 = flights[2]
