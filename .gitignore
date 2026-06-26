@@ -47,6 +47,9 @@ logs/
 *.log
 ~/.pilotlog/logs/
 
+# Runtime PID files
+.pids/
+
 # User data - DO NOT COMMIT
 *.db
 *.db-shm
@@ -81,6 +84,7 @@ src/pilotlog/swapa/data/swapa_cookies.json
 src/pilotlog/swapa/data/ot_snapshot.json
 src/pilotlog/swapa/data/ttga_snapshot.json
 src/pilotlog/swapa/data/ot_alerts.jsonl
+src/pilotlog/swapa/data/ot_alerted.json
 src/pilotlog/swapa/data/.ot_scan.lock
 src/pilotlog/swapa/data/swapa_*.json
 src/pilotlog/swapa/data/logbook_downloads/
